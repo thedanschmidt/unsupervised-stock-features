@@ -2,8 +2,9 @@
 import os
 import click
 import logging
+import pandas as pd
+import pickle
 from dotenv import find_dotenv, load_dotenv
-
 
 @click.command()
 @click.argument('input_filepath', type=click.Path(exists=True))
