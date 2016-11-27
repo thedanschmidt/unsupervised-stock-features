@@ -72,14 +72,105 @@ power by fitting them against future returns with 1) a linear model
 and 2) a neural model. Individual stocks are tried, along with residual
 stock movements (market neutral) and baskets of clustered stocks.
 
+\section{The Problem}
+
+The specific question addressed in this paper is: can features learned on
+windowed stock price data provide market insight or predict future stock prices?
+Much research has been done to address the question of predicting future prices
+just from looking at the stock's data. The efficient market hypothesis is the
+theory by economists that any predictive power in the markets is almost 
+instantaneously arbitraged away, so that, without outside information, stock prices 
+follow random walks. The controversial field of technical analysis holds the
+opposite theory, that there are predictive patterns in stock price movements. This
+paper aims to expand the idea of technical analysis in three key ways.
+
+\begin{enumerate}
+    \item
+     One key feature of stock prices is that stocks are highly correlated to one
+        another, which can be represented by correlation to the overall market
+        and correlation to similar companies. This paper uses the ``eigenportfolio"
+        method with a linear model to remove overall correlations with other tickers.
+        In theory, the residuals of this model will be the price movements due to that
+        stock alone. (TODO citation). This strategy can be implemented in practice
+        with various hedging strategies. The hope is that there may be predictive
+        power in movements in this residual price space.
+    \item
+      Using both linear and non-linear unsupervised models to learn latent patterns
+        in stock prices and in the residual price space. The specific methods are PCA, 
+        kernel PCA, autoencoders, and latent variable models.
+    \item
+      Combining these learned features across multiple correlated tickers to predict
+        patterns in the others. It may be that there are market-structure patterns
+        in how price movements are related to one another other than linear correlation
+        models. A neural network is trained on future returns to search for such patterns. 
+\end{enumerate}
+
 \section{The Data}
+
+\subsection{Format and Preprocessing}
+The data is minute-resolution price and volume data on SP500 stock tickers and 
+a few hundred major ETFs.
+The data is provided in CSV format from PiTrading. This raw data is then processed
+out of CSV files into Python pandas dataframes, which are saved in a binary format
+to disk for faster processing later. 
+
+A major note is that there are many missing price dates, and that the data also may
+contain survivor bias. These issues are mitigated in this analysis by selecting
+tickers and time frames that have mostly ($95\%$) data and using only relatively
+short time frames over which established companies are trading in a normal environment.
+
+\subsection{Returns: Working in Percent Return Space}
+
+One important starting point for analyzing price data is to work in return space.
+This is because the raw dollar value of a stock doesn't really mean anything. The
+data used in this paper does not have market cap information, and so the prices
+cannot be weighted that way. That leaves three options:
+
+\begin{enumerate}
+    \item
+        Return space, i.e.
+        \[ r_t = \frac{X_t - X_{t-1}}{X_{t-1}} \]
+    \item
+        Log return space, i.e.
+        \[ l_t = \log\left( 1+ r_t \right) = \log\left( \frac{X_t}{X_{t-1}} \right) = \log(X_t) - \log(X_{t-1}) \] 
+    \item
+        Normalized returns
+        \[ r_{t} = \frac{1}{\hat{\sigma}(X)} \frac{X_t - X_{t-1}}{X_{t-1}} \]
+        where we divide by the estimated standard deviation.
+\end{enumerate}
+
+Return space is convenient in that the results are easily interpretible, as in they are
+just fractional movements in price. The reasons to prefer log return space are that
+often returns are not normally distributed, but the log of the returns is, and that
+log returns have nice computational properties where you can accumulate with sums
+rather than cumulative products. Normalized returns are mostly useful for doing
+market basket analysis, as some stocks may have more volatility than others. In this
+paper we will mostly use log returns. The volatility weighting one often wants to
+remove with normalized returns is useful to capture with stocks have important
+large movements in this analysis.
 
 \section{Linear Models: PCA}
 
-\section{Autoencoders}
+\subsection{Ticker Correlation PCA}
+
+\subsection{Windowed PCA}
+
+\section{Non-linear: Kernel PCA, Autoencoders, and Latent Variable Models}
+
+\subsection{Kernel PCA}
+\subsection{Autoencoders}
+\subsection{Latent Variable Model}
 
 \section{Fitting Future Returns}
 
+\subsection{Linear Model}
+
+\subsection{Neural Network Models}
+
 \section{Results}
+
+
+\section{Conclusions}
+
 
 \end{document}
