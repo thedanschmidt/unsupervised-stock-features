@@ -21,7 +21,10 @@
 \usepackage{nicefrac}       % compact symbols for 1/2, etc.
 \usepackage{microtype}      % microtypography
 \usepackage{graphicx}
-\usepackage{cite}
+\usepackage{natbib}
+\bibliographystyle{unsrt}
+\usepackage{caption}
+\usepackage{subcaption}
 
 \title{Neural Networks for Learning Stock Market Features}
 
@@ -42,9 +45,11 @@
     but potentially lucrative task. The usual procedure for finding
     profitable patterns is to have a hypothesis about how the market works,
     and then to engineer features that model this hypothesis. In this paper,
-    I investigate potential methods for exctracting potential features from
+    I investigate methods for exctracting potential features from
     stock price and volume data. First, both linear (PCA) and non-linear
     (autoencoder) dimensionality techniques are applied to windowed data.
+    Regularization techniques and Bayesian analysis are applied to
+    reveal different sets of features.
     Then a layered supervised network is trained against future returns 
     to try to find features that correspond to predictive power. In each
     case, a GPU is used to train millions of data points effectively. I
@@ -54,14 +59,17 @@
 
 \section{Introduction}
 
+Note: my code lives at \url{https://github.com/thedanschmidt/unsupervised-stock-features},
+and the data is at \url{://drive.google.com/drive/folders/0B3w8qRTObMYecHA3YmtaY184ZlE?usp=sharing} 
+
 The hot machine learning topic of the moment is so called deep-learning. The
 idea with deep learning is not to improve models by hand-engineering features
 but by turning loose a large amount of computational power on neural networks
-with many hidden layers. The idea is that the layers learn a hierarchy of 
+with many hidden layers. Layers learn a hierarchy of 
 features that have large predictive power for the goal the network is trained
 against. My approach here is not to use the most cutting-edge or trendy
 deep learning techniques but to use a deep learning software system, Keras 
-with a Theano back end, to try basic feature learning on stock market data. 
+with a Theano backend, to try basic feature learning on stock market data. 
 
 Neural networks are some of the most powerful learning algorithms known due
 to their non-linear nature and ability to learn any continuous function.
@@ -78,21 +86,24 @@ system, I train my networks on a GTX 750ti, a GPU that is a couple of years old
 but still is orders of magnitude faster to perform the matrix operations than 
 my CPU.
 
-\section{The Problem}
-
-
-Much research has been done to address the question of predicting future prices
-just from looking at the stock's data. The efficient market hypothesis is the
-economic theory that any predictive power in the markets is almost 
-instantaneously arbitraged away, so that without outside information, stock prices 
-follow random walks (citation). The controversial field of technical analysis holds the
-opposite theory, that there are predictive patterns in stock price movements.
+In this paper, I first describe the data used and how it was preprocessed. I then
+discuss applying a linear model, PCA, to try and reduce the dimensionality of
+windowed data. Then a non-linear method, an autoencoder, is trained to
+replicate windowed data in a lower dimensional space. These techniques are
+unsupervised methods to try and find patterns without any regard to predictive
+power. Following these unsupervised techniques, I describe a supervised technique
+to extract price and volume patterns that most correspond to predicting future
+returns. This model, while lacking in explanatory power, seems to have some
+predictive power as a simple training strategy executed with this model
+is profitable out-of-sample for 24 of 30 Dow Jones Industrial average tickers. 
+I then wrap up by describing the tips and tricks my analysis has revealed for
+applying neural networks to learn stock market data. 
 
 \section{The Data}
 
 \subsection{Format and Preprocessing}
-The data is minute-resolution price and volume data on SP500 stock tickers and 
-a few hundred major ETFs.
+The data is minute-resolution price and volume data on Down Jones Industrial
+Average stock tickers.
 The data is provided in CSV format from PiTrading. This raw data is then processed
 out of CSV files into Python pandas dataframes, which are saved in a binary format
 to disk for faster processing later. 
@@ -105,9 +116,11 @@ short time frames over which established companies are trading in a normal envir
 \subsection{Returns: Working in Percent Return Space}
 
 One important starting point for analyzing price data is to work in return space.
-This is because the raw dollar value of a stock doesn't really mean anything. The
-data used in this paper does not have market cap information, and so the prices
-cannot be weighted that way. That leaves three options:
+This is because the raw dollar value of a stock doesn't contain much information,
+and because modeling price is more difficult due to the fact that it is 
+autoregressive. The data used in this paper does not have market cap 
+information, and so the prices
+cannot be weighted that way. That leaves three basic options:
 
 \begin{enumerate}
     \item
@@ -127,7 +140,9 @@ just fractional movements in price. The reasons to prefer log return space are t
 often returns are not normally distributed, but the log of the returns is, and that
 log returns have nice computational properties where you can accumulate with sums
 rather than cumulative products. Normalized returns are mostly useful for doing
-market basket analysis, as some stocks may have more volatility than others. 
+market basket analysis, as some stocks may have more volatility than others. Most
+of the following analysis was done with percent returns, sometimes normalized
+by standard deviation for neural network processing.
 
 \section{Linear Dimensionality Reduction: PCA}
 
@@ -139,15 +154,25 @@ has any viability as a dimensionality reduction strategy. The results are shown
 in figure \ref{fig:pca}. 
 
 \begin{figure}[h]
-    \includegraphics[width=0.5\textwidth]{pca_features}
-    \caption{The eigenvectors of PCA.}
-    \label{fig:pca}
+	\centering
+	\begin{subfigure}{.5\textwidth}
+	  \centering
+		\includegraphics[width=.9\textwidth]{eigenvals}
+      \caption{Decay in the eigenvalues of PCA}
+        \label{fig:evals}
+	\end{subfigure}%
+	\begin{subfigure}{.5\textwidth}
+          \centering
+		\includegraphics[width=0.9\textwidth]{pca_features}
+		\caption{The eigenvectors of PCA.}
+		\label{fig:pca}
+	\end{subfigure}
 \end{figure}
 
 It turns out this projection is not
 very useful here. First, the eigenvector corresponding to the
-principal component is not qualitatively distinguishable from
-the component that explains the least variance. Second, the
+principal component does not seem to carry more information
+than any of the less significant eigenvectors. Second, the
 decay in the eigenvalues is much slower than what we would
 expect if PCA discovered underlying linear structure. Part of
 the problem with this analysis is that for a windowed time series,
@@ -156,18 +181,18 @@ time. Thus any structure found here would have to persist in sliding
 through the windows, which it looks like is not the case. We need
 a model that has more knowledge of the structure of the data. 
 
-
 \section{Non-linear: Neural Nets}
 
 Another way to reduce the dimensionality for prediction is to let the
 neural network learn features itself by stacking hidden layers into the network.
+These approaches are described in Bishop \cite{bishop1995neural}.
 This is the approach used here. 
 
 \subsection{Unsupervised Approach: Autoencoder}
 
-Although PCA did not seem to recover any underlying structure in the 
-data, it is possible that there is some non-linear relationships within
-the data. The technique tried here for to find this structure is to
+Although PCA did not seem to recover a useful linear projection in the 
+data, it is possible that there is some non-linear relationships. 
+The technique tried here for to find this structure is to
 train an autoencoder, a neural network that learns the identity function.
 The idea of an autoencoder is that there are at least two non-linear layers
 between the input vector and the output vector. The first layer maps the
@@ -184,6 +209,27 @@ can be used to find interesting non-linear patterns.
     \label{fig:autoencoder_features}
 \end{figure}
 
+The results of training an autoencoder are shown in \ref{fig:autoencoder_features}.
+This particular autoencoder had four layers, two non-linear encoding layers, followed
+by a non-linear decoding layer and a final linear layer that scales the output of the
+decoded layer back to represent the window. The 15 minute windows
+were compressed to 10 dimensional space, a number chosen from
+running different dimension models on a validation set. The objective function 
+was mean square
+error, trained with an adaptive stochastic gradient descent algorithm ran in
+batches on about 100,000 price windows for AAPl. 
+There seem to be some interesting learned patterns, such as large
+movements early in the window that lead to dampened movements later. This
+visualization is only of the first layer in the data set, and later layers form
+non-linear combinations of these earlier features.
+
+In \ref{fig:space_features}, the same autoencoder was trained except now with
+an $l1$ regularization parameter of $.001$. $l1$ regularizing, also called LASSO,
+enforces a sparsity constraint on features. The hope is that the new objective
+function optimizes away from noise and finds simpler features. It is interesting
+how the algorithm now seems to pick out a small set of discrete price jumps
+to form the first layer of its features.
+
 \begin{figure}[h]
     \includegraphics[width=0.5\textwidth]{sparse_features}
     \caption{Same network trained on the same data as \ref{fig:autoencoder_features},
@@ -199,13 +245,14 @@ series with neural networks. The model here is a standard multi-layer
 perceptron as described in Bishop \cite{bishop1995neural}.
 
 \begin{figure}[h]
+	\centering
     \includegraphics[width=0.5\textwidth]{bishop_ts_nn}
     \caption{Diagram of the windowed network to predict one step forward in the
     time series.}
     \label{fig:mlp_ts}
 \end{figure}
 
-As shown in figure \ref{mlp_ts}, the idea is that the time series is windowed
+As shown in figure \ref{fig:mlp_ts}, the idea is that the time series is windowed
 into sections. These sections are then used as features for predicting the next
 element in the time series. The layers stacked in between are nonlinear
 combinations designed to learn latent features in the data that predict the
@@ -222,10 +269,19 @@ The learned features on the same data set as PCA and the autoencoder is shown in
 figure \ref{fig:mlp_feats}.
 
 \begin{figure}[h]
+	\centering
     \includegraphics[width=0.5\textwidth]{mlp_feats}
     \caption{Features learned in the supervised network}
     \label{fig:mlp_feats}
 \end{figure}
+
+It is interesting to see how these features seem to have much less interpretible
+structure than the autoencoder. One part of this is that this network was
+also trained with volume data, and so more of the predictive power may be in
+a combination of price/volume data which is more difficult to visualize.
+Another explanation is that this network has not really converged to its optimal
+point yet. We will see later when this network is trained on millions of
+samples, it learns more identifiable price features.
 
 \section{Bayesian Analysis of The Network}
 
@@ -253,7 +309,7 @@ to effectively search. In addition, unless one has a lot of data, it is
 difficult to not overfit either the training set or validation set. Finally,
 once one has a model, it is difficult to a sense of what the error bars should
 be on the models predictions. Approaching this problem with a Bayesian 
-perspective provides some ways to get around these problems.\\ \\
+perspective provides some ways to get around these problems.
 
 The first step to using Bayesian techniques on neural networks is to choose
 a prior on the weights. Here for simplicity we use a Gaussian model
@@ -288,7 +344,12 @@ where
 This $\sigma_t$ is our error bar, and evaluating it mostly involves evaluating the
 Hessian matrix $H$ at a given point. The first term is a standard noise term
 from our model of the noise on our data. Either term can dominate depending
-on the Hessian matrix.
+on the Hessian matrix. Computing this Hessian matrix effectively and
+efficiently is a non-trivial task, and this is why I was not able to apply
+these methods to get error bars on my supervised neural networks predictions. But
+given a more sophisticated setup, I would be able to compute this Hessian and thus
+be able to sample the model posterior in order to get a sense of whether my
+network has found a predictive set of parameters or not.
 
 \section{Implementation and Results}
 
@@ -302,7 +363,7 @@ performance training for faster iteration on trying different models.
 The supervised version of the nerual network showed the most promise for
 being the basis of a trading strategy. The network was trained on
 the $30$ symbols in the Dow Jones Industrial average over a period of
-two years, representing approximately $1.2$ million data points. This
+two years, representing approximately $3$ million data points. This
 was done in two ways: first, a network was trained on each symbol. These
 networks try to learn features unique to each symbol. 
 The predictions from these networks were then used as a trading strategy. The trading
@@ -313,10 +374,13 @@ including fees or execution difficulties in buying and selling at the minute
 time scale, this strategy appears to be profitable for 24 of 30 symbols in the
 Dow Jones Industrial Average, trained on 2013 and tested on 2014.
 
+\begin{table}[ht]
+\caption{Output of neural network trading strategy on Dow Jones Industrial Average.}
+\label{profit_table}
+\centering
 \begin{tabular}{lll}
-    Symbol & Profit (annualized return) & Sharpe Ratio \\ 
+    Symbol & Profit (annualized return) & Sharpe Ratio (annualized return/$\hat{\sigma}$) \\ 
 \toprule
-
     AAPL & 0.16 & 0.37 \\
     AXP & 1.30 & 3.13 \\
     BA & 1.16 & 1.88 \\
@@ -348,26 +412,51 @@ Dow Jones Industrial Average, trained on 2013 and tested on 2014.
     WMT & 2.21 & 7.10 \\
     XOM & 1.16 & 3.73 \\
 \end{tabular}
+\end{table}
 
 Another network was constructed that was trained on all $1.2$ million data points
 to see if the large amount of data would reveal any interesting overall stock
 market patterns. The features learned are shown in \ref{fig:big_feats}.
 
-\begin{figure}[h]
+\begin{figure}[ht]
+	\centering
     \includegraphics[width=0.5\textwidth]{mlp_feats_big}
     \caption{Features learned by training on millions of data points across symbols.}
     \label{fig:big_feats}
 \end{figure}
 
+These features seem to shown that a significant predictor for future returns is some
+fifteen overall upward or downward trend within the last fifteen minutes. Each of
+these price features is also paired with volume features, which are much less easy
+to visualize, but there may be more differentiation between these features within
+those, i.e. if the price rises on high volumes or if it rises on low volumes and
+what that says about predictive power. In any case, the large trained network
+was able to discover useful patterns in price and volume for predicting future
+returns.
 
 \section{Conclusions}
 
 In conclusion, on the level of minute data there do seem to be exploitable patterns
-in stock price data. While linear methods struggle, non-linear neural networks
-find subtle structure. This analysis is very cursory 
+in stock price data. While linear methods struggle, non-linear neural networks may
+find subtle structure. I learned quite a few useful tips and tricks 
+for applying these methods  doing this project
+One is that training these models on GPUs saves lots of computational time; a real
+deep learning setup would be able to crunch even more data faster, and my analysis
+seems to show that the more data fed to these models the better they seem to learn
+structure. Another trick I learned was to always unit normalize inputs and outputs
+to these networks. This helps keep parameters in sensible ranges and improves network
+performance since they are trained on 32 bit floating points. 
+
+Future research would be to investigate the statistical significance of these
+methods. Although it appears the networks learned interesting structure, I would
+not actually apply them to trading until I could verify that the structure was not
+just noise. I would use rolling training/validation/test sets, more than the
+fixed sets I used here, to verify that the models had learned something interesting.
+Also, these models could be made more realistic by incorporating many other sources
+of data relevant to stock price movemetns. But overall neural networks due
+seem to be a useful tool for discovering stock market features.
 
 \bibliography{citations}{}
-\bibliographystyle{plain}
 
 \nocite{*}
 
