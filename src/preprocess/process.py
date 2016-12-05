@@ -54,17 +54,16 @@ def get_symbols_matrix(symbols, data_loc, start_date, end_date, price='Close'):
     return df, real_syms
 
 # Creates a data frame where each row is a window of the series with future returns 
-def get_windows_rets(sym, window_length=60, window_offset=10, forward=(1,2,5,10), price='Close'):
-    days = sym.groupby(sym.index.day)
+def get_windows_rets(sym, window_length=60, window_offset=1, forward=(1,2,5,10), price='Close'):
+    days = sym.groupby([sym.index.year, sym.index.month, sym.index.day])
     mf = max(forward)
-    n_windows = int( (389 - window_length-mf) / window_offset )
+    n_windows = int( (388 - window_length-mf) / window_offset )
     windows = np.zeros( (len(days)*n_windows, window_length) ) 
     rets = np.zeros( (len(days)*n_windows, len(forward)))
-    print(windows.shape)
     di = 0
     invalid_days = [] 
     for d, day in days:
-        if (len(day) == 390):
+        if (len(day) > 388):
             pday = df_to_returns(day)
             for wi in range(n_windows):
                 ei = wi*window_offset+window_length
@@ -75,7 +74,25 @@ def get_windows_rets(sym, window_length=60, window_offset=10, forward=(1,2,5,10)
             di += 1
         else:
             invalid_days.append(d)
+    print(invalid_days)
     return windows[:di*n_windows], rets[:di*n_windows] 
+
+def get_volume_windows(sym, window_length=60, window_offset=1):
+    days = sym.groupby([sym.index.year, sym.index.month, sym.index.day])
+    n_windows = int( (388 - window_length-2) / window_offset )
+    windows = np.zeros( (len(days)*n_windows, window_length) ) 
+    di = 0
+    invalid_days = []
+    for d, day in days:
+        if (len(day) > 388):
+            vols = day['Volume'].values
+            for wi in range(n_windows):
+                ei = wi*window_offset+window_length
+                windows[di*n_windows + wi, :] = vols[wi*window_offset:ei]
+            di += 1
+        else:
+            invalid_days.append(d)
+    return windows[:di*n_windows]
 
 def check_integrity(sym):
     # A good way to check for full data in a trading day
